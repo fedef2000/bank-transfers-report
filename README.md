@@ -47,6 +47,9 @@ doppioni. Le altre tab del foglio non vengono toccate.
   aggiorna da solo quando modifichi le transazioni. Viene riscritta a ogni
   caricamento: le uniche celle da compilare a mano sono i saldi dei conti e
   la colonna `Note` (sfondo giallo), che vengono conservati.
+  Ogni anno è un blocco a sé: una fascia con l'anno, i dodici mesi, totale e
+  media, e sotto due grafici (torta delle spese per categoria e andamento
+  mensile delle spese). Anche i grafici vengono ricreati a ogni caricamento.
 
 Colonne delle tab di transazioni:
 `Data | Importo | Nome | Categoria | Conto | Descrizione banca | Importo contato | Mesi`
