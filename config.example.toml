@@ -9,9 +9,21 @@ credenziali = "credentials.json"
 # Nome del conto scritto nella colonna "Conto"
 conto = "Trade Republic"
 
-# Nomi delle tab su cui scrivere (vengono create se non esistono)
+# Nomi delle tab (vengono create se non esistono).
+# Le spese vanno in una tab per anno: "Spese 2026", "Spese 2027", ...
 foglio_spese = "Spese"
 foglio_entrate = "Entrate"
+foglio_riepilogo = "Riepilogo"
+
+# Le spese sopra questo importo (in euro, numero intero) hanno lo sfondo rosso chiaro.
+# Vale per le tab create da qui in poi.
+soglia_evidenza = 30
+
+# Conti di cui tieni il saldo a mano nel riepilogo; la loro somma è il patrimonio.
+patrimonio = ["Investimenti", "Trade Republic", "N26", "Contanti"]
+
+# Il CSV riporta l'ora in UTC: viene convertita in questo fuso orario.
+fuso_orario = "Europe/Rome"
 
 # IBAN degli altri tuoi conti: i bonifici da/verso questi IBAN sono giroconti
 # e non vengono caricati né come spesa né come entrata.
