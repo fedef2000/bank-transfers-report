@@ -1,2 +1,10 @@
-/target
 /.idea
+/.venv
+__pycache__/
+
+# Dati personali: mai nel repo
+/data
+*.csv
+*.pdf
+config.toml
+credentials*.json

@@ -1,0 +1,18 @@
+# Copia questo file in config.toml (che è ignorato da git) e compilalo.
+
+# ID del foglio Google: la parte dell'URL tra /d/ e /edit
+spreadsheet_id = ""
+
+# Chiave JSON del service account Google (vedi README)
+credenziali = "credentials.json"
+
+# Nome del conto scritto nella colonna "Conto"
+conto = "Trade Republic"
+
+# Nomi delle tab su cui scrivere (vengono create se non esistono)
+foglio_spese = "Spese"
+foglio_entrate = "Entrate"
+
+# IBAN degli altri tuoi conti: i bonifici da/verso questi IBAN sono giroconti
+# e non vengono caricati né come spesa né come entrata.
+miei_iban = []

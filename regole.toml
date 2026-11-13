@@ -1,0 +1,137 @@
+# Regole per assegnare in automatico nome e categoria alle transazioni.
+#
+# Per ogni transazione vince la prima [[regola]] il cui testo `contiene`
+# compare (senza distinzione maiuscole/minuscole) nel nome, nella descrizione
+# o nella controparte riportati dalla banca.
+# Campi opzionali: nome, categoria, ignora = true (la transazione non viene caricata).
+# Se nessuna regola assegna la categoria, si prova con il codice MCC del
+# negozio (tabella [mcc] in fondo). Quello che resta vuoto lo compili dal foglio.
+
+# Menu a tendina della colonna "Categoria" (usati quando la tab viene creata)
+categorie_spese = [
+    "Casa",
+    "Spesa",
+    "Pranzo in ufficio",
+    "Cene con amici",
+    "Uscite con amici",
+    "Cibo fuori casa",
+    "Trasporti",
+    "Viaggi",
+    "Vestiti",
+    "Cura personale",
+    "Salute",
+    "Sport",
+    "Hobby",
+    "Abbonamenti",
+    "Regali",
+    "Altro",
+    "Da identificare",
+]
+categorie_entrate = ["Stipendio", "Interessi", "Dividendi", "Rimborsi", "Regali", "Altro"]
+
+# --- Supermercati ---
+[[regola]]
+contiene = "interspar"
+nome = "Interspar"
+categoria = "Spesa"
+
+[[regola]]
+contiene = "spar dankt"
+nome = "Spar"
+categoria = "Spesa"
+
+[[regola]]
+contiene = "billa"
+nome = "Billa"
+categoria = "Spesa"
+
+[[regola]]
+contiene = "lidl"
+nome = "Lidl"
+categoria = "Spesa"
+
+[[regola]]
+contiene = "hofer"
+nome = "Hofer"
+categoria = "Spesa"
+
+[[regola]]
+contiene = "carrefour"
+nome = "Carrefour"
+categoria = "Spesa"
+
+[[regola]]
+contiene = "superstore"
+nome = "Superstore"
+categoria = "Spesa"
+
+# --- Cura personale ---
+[[regola]]
+contiene = "dm-fil"
+nome = "DM"
+categoria = "Cura personale"
+
+[[regola]]
+contiene = "tigota"
+nome = "Tigotà"
+categoria = "Cura personale"
+
+# --- Lavoro ---
+[[regola]]
+contiene = "buoni mensa"
+nome = "Buoni mensa"
+categoria = "Pranzo in ufficio"
+
+# --- Trasporti ---
+[[regola]]
+contiene = "easypark"
+nome = "Parcheggio"
+categoria = "Trasporti"
+
+# --- Abbonamenti ---
+[[regola]]
+contiene = "iliad"
+nome = "Iliad"
+categoria = "Abbonamenti"
+
+[[regola]]
+contiene = "youtube"
+nome = "YouTube"
+categoria = "Abbonamenti"
+
+[[regola]]
+contiene = "telecom italia"
+nome = "TIM"
+categoria = "Abbonamenti"
+
+# --- Categoria dal codice MCC (solo se nessuna regola l'ha assegnata) ---
+# Ristoranti e bar (5812, 5814) restano volutamente fuori: dal codice non si
+# distingue tra pranzo in ufficio, cena con amici e cibo fuori casa.
+[mcc]
+5411 = "Spesa"            # supermercati
+5462 = "Spesa"            # panifici
+5499 = "Spesa"            # alimentari vari
+4111 = "Trasporti"        # trasporto pubblico
+4112 = "Trasporti"        # treni
+4121 = "Trasporti"        # taxi
+4131 = "Trasporti"        # autobus
+4784 = "Trasporti"        # pedaggi
+5541 = "Trasporti"        # carburante
+5542 = "Trasporti"        # carburante self-service
+7523 = "Trasporti"        # parcheggi
+4511 = "Viaggi"           # compagnie aeree
+7011 = "Viaggi"           # hotel
+5611 = "Vestiti"
+5621 = "Vestiti"
+5651 = "Vestiti"
+5691 = "Vestiti"
+5977 = "Cura personale"   # drogherie / cosmetici
+7230 = "Cura personale"   # parrucchieri
+5912 = "Salute"           # farmacie
+8011 = "Salute"           # medici
+8099 = "Salute"           # servizi sanitari
+7941 = "Sport"            # impianti sportivi
+7997 = "Sport"            # palestre / club
+4812 = "Abbonamenti"      # telefonia
+4814 = "Abbonamenti"      # telecomunicazioni
+4899 = "Abbonamenti"      # streaming / pay TV
