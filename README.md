@@ -101,5 +101,10 @@ Il totale nella riga-titolo del mese resta quello dei soldi realmente usciti.
 codici MCC usata come ripiego per la categoria e l'elenco delle categorie.
 Per le spese che non ricordi c'è la categoria `Da identificare`.
 
+Le regole valgono anche per le spese già caricate: a ogni caricamento, le
+righe sul foglio con `Nome` o `Categoria` vuoti vengono completate con le
+regole attuali (confrontate con `Descrizione banca`). Una cella già compilata
+non viene mai sovrascritta: per far riapplicare una regola, svuotala.
+
 I bonifici da/verso gli IBAN elencati in `miei_iban` (`config.toml`) sono
 giroconti e non vengono caricati.

@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent
 HEADER = ["Data", "Importo", "Nome", "Categoria", "Conto", "Descrizione banca", "ID transazione"]
 DATE_COL = HEADER.index("Data")
 AMOUNT_COL = HEADER.index("Importo")
+NAME_COL = HEADER.index("Nome")
 CATEGORY_COL = HEADER.index("Categoria")
 DESCRIPTION_COL = HEADER.index("Descrizione banca")
 ID_COL = HEADER.index("ID transazione")
@@ -133,8 +134,14 @@ def year_tab(cfg: dict, year: int) -> str:
 
 
 def apply_rules(tx: dict, rules: dict) -> tuple[str, str, bool]:
-    """Restituisce (nome, categoria, ignora) per una transazione."""
-    text = " ".join(tx[k] for k in ("name", "description", "counterparty_name")).casefold()
+    """Restituisce (nome, categoria, ignora) per una transazione del CSV."""
+    text = " ".join(tx[k] for k in ("name", "description", "counterparty_name"))
+    return match_rules(text, tx["mcc_code"].strip(), rules)
+
+
+def match_rules(text: str, mcc: str, rules: dict) -> tuple[str, str, bool]:
+    """Restituisce (nome, categoria, ignora) per il testo riportato dalla banca."""
+    text = text.casefold()
     nome = categoria = ""
     for rule in rules.get("regola", []):
         if rule["contiene"].casefold() in text:
@@ -143,8 +150,37 @@ def apply_rules(tx: dict, rules: dict) -> tuple[str, str, bool]:
             nome, categoria = rule.get("nome", ""), rule.get("categoria", "")
             break
     if not categoria:
-        categoria = rules.get("mcc", {}).get(tx["mcc_code"].strip(), "")
+        categoria = rules.get("mcc", {}).get(mcc, "")
     return nome, categoria, False
+
+
+def fill_from_rules(rows: list[list], records: dict[str, "Record"], rules: dict) -> list[list]:
+    """Completa nome e categoria vuoti delle righe già sul foglio con le regole attuali.
+
+    Non sovrascrive mai una cella già compilata. Per le transazioni presenti
+    nel CSV usa tutti i dati della banca (anche il codice MCC); per le altre
+    applica le regole alla descrizione scritta sul foglio. Modifica le righe
+    sul posto e restituisce quelle cambiate.
+    """
+    changed = []
+    for row in rows:
+        targets = [c for c in (NAME_COL, CATEGORY_COL) if not str(row[c]).strip()]
+        if not targets:
+            continue
+        record = records.get(row[ID_COL])
+        if record is not None:
+            values = {NAME_COL: record.row[NAME_COL], CATEGORY_COL: record.row[CATEGORY_COL]}
+        else:
+            nome, categoria, ignore = match_rules(str(row[DESCRIPTION_COL]).lstrip("'"), "", rules)
+            if ignore:
+                continue
+            values = {NAME_COL: safe_text(nome), CATEGORY_COL: categoria}
+        filled = [c for c in targets if values[c]]
+        for c in filled:
+            row[c] = values[c]
+        if filled:
+            changed.append(row)
+    return changed
 
 
 def parse_csv(path: Path, cfg: dict, rules: dict) -> Parsed:
@@ -471,7 +507,6 @@ def helper_formulas() -> list[str]:
     date, amount, counted, spread = (
         f"{col_letter(c)}:{col_letter(c)}" for c in (DATE_COL, AMOUNT_COL, COUNTED_COL, SPREAD_COL)
     )
-    date_body, spread_body = (f"{col_letter(c)}2:{col_letter(c)}" for c in (DATE_COL, SPREAD_COL))
     keys = f"{col_letter(DATA_WIDTH + 1)}:{col_letter(DATA_WIDTH + 1)}"
     parsed = f"{col_letter(DATA_WIDTH + 2)}:{col_letter(DATA_WIDTH + 2)}"
     names = "{" + ";".join(f'"{m[:3].lower()}"' for m in MONTHS) + "}"
@@ -494,8 +529,11 @@ def helper_formulas() -> list[str]:
         f'{s}"{UNREADABLE}")'
     )
     own_month = f'";"&{month_key("d")}&";"'
+    # Colonne intere e numero di riga da SEQUENCE: così la formula resta
+    # allineata anche se si inseriscono righe a mano in qualsiasi punto.
     read = (
-        f'=VSTACK("{HELPER_HEADER[2]}"{s}MAP({date_body}{s}{spread_body}{s}LAMBDA(d{s}ms{s}'
+        f"=MAP({date}{s}{spread}{s}SEQUENCE(ROWS({date})){s}LAMBDA(d{s}ms{s}i{s}"
+        f'IF(i=1{s}"{HELPER_HEADER[2]}"{s}'
         f'IF(NOT(ISNUMBER(d)){s}""{s}IF(TRIM(ms&"")=""{s}{own_month}{s}{months_list})))))'
     )
     n_months = f'(LEN({keys})-LEN(SUBSTITUTE({keys}{s}";"{s}""))-1)'
@@ -508,13 +546,20 @@ def helper_formulas() -> list[str]:
 
 def ensure_adjust_columns(spreadsheet, ws) -> None:
     """Aggiunge o aggiorna le colonne di correzione e quelle di servizio."""
-    if ws.row_values(1)[COUNTED_COL:EXTRA_START] == ADJUST_HEADER + HELPER_HEADER:
+    from gspread.utils import ValueRenderOption
+
+    formulas = helper_formulas()
+    helper_range = f"{col_letter(DATA_WIDTH)}1:{col_letter(EXTRA_START - 1)}"
+    first_time = ws.row_values(1)[COUNTED_COL:EXTRA_START] != ADJUST_HEADER + HELPER_HEADER
+    if not first_time and ws.get_values(f"{helper_range}1", value_render_option=ValueRenderOption.formula) == [formulas]:
         return
     if ws.col_count < EXTRA_START:
         ws.resize(cols=EXTRA_START)
     # Svuota le colonne di servizio: le formule in riga 1 devono potersi espandere.
-    ws.batch_clear([f"{col_letter(DATA_WIDTH)}1:{col_letter(EXTRA_START - 1)}{ws.row_count}"])
-    ws.update([ADJUST_HEADER + helper_formulas()], f"{col_letter(COUNTED_COL)}1", value_input_option="USER_ENTERED")
+    ws.batch_clear([f"{helper_range}{ws.row_count}"])
+    ws.update([ADJUST_HEADER + formulas], f"{col_letter(COUNTED_COL)}1", value_input_option="USER_ENTERED")
+    if not first_time:
+        return  # formati e regole ci sono già: andavano aggiornate solo le formule
     sid = ws.id
     spread_column = {"startColumnIndex": SPREAD_COL, "endColumnIndex": SPREAD_COL + 1}
     unreadable = f'=${col_letter(EXTRA_START - 1)}2="{UNREADABLE}"'
@@ -899,9 +944,20 @@ def main() -> None:
 
     spreadsheet = open_spreadsheet(cfg) if online else None
     duplicates = 0
+    completed = 0
+    by_id = {r.tx_id: r for r in parsed.records}
+    # Tutte le tab di transazioni: quelle che ricevono righe da questo CSV e
+    # quelle già sul foglio, dove le regole nuove possono completare qualcosa.
+    year_tab_re = re.compile(rf"^{re.escape(cfg['foglio_spese'])} \d{{4}}$")
+    titles = {r.tab for r in parsed.records}
+    if online:
+        titles |= {
+            tab.title
+            for tab in spreadsheet.worksheets()
+            if year_tab_re.match(tab.title) or tab.title == cfg["foglio_entrate"]
+        }
     # Prima le tab delle spese in ordine di anno, poi le entrate.
-    titles = sorted({r.tab for r in parsed.records}, key=lambda t: (t == cfg["foglio_entrate"], t))
-    for title in titles:
+    for title in sorted(titles, key=lambda t: (t == cfg["foglio_entrate"], t)):
         is_income = title == cfg["foglio_entrate"]
         records = [r for r in parsed.records if r.tab == title]
         ws = find_tab(spreadsheet, title, HEADER) if online else None
@@ -911,10 +967,16 @@ def main() -> None:
         known_ids = {row[ID_COL] for row in existing}
         new = [r for r in records if r.tx_id not in known_ids]
         duplicates += len(records) - len(new)
+        refilled = fill_from_rules(existing, by_id, rules)
+        completed += len(refilled)
 
         if args.dry_run:
             print_preview(title, new)
-        elif new:
+            if refilled:
+                print(f"  Già sul foglio, verrebbero completate ({len(refilled)}):")
+                for row in refilled:
+                    print(f"    {row[NAME_COL][:18]:<18}  {row[CATEGORY_COL][:18]:<18}  {str(row[DESCRIPTION_COL])[:50]}")
+        elif new or existing:
             if ws is None:
                 ws = create_data_tab(
                     spreadsheet,
@@ -923,9 +985,7 @@ def main() -> None:
                     None if is_income else highlight_above,
                 )
             write_data_tab(ws, build_layout(existing + [r.row for r in new]))
-            print(f"{title}: {len(new)} righe aggiunte")
-        else:
-            print(f"{title}: niente di nuovo")
+            print(f"{title}: {len(new)} righe aggiunte, {len(refilled)} già presenti completate con le regole")
 
         if new:
             missing = sum(1 for r in new if not r.row[CATEGORY_COL])
