@@ -34,6 +34,34 @@ Le transazioni già presenti, riconosciute dalla colonna nascosta
 `ID transazione`, vengono saltate: lo stesso CSV si può ricaricare senza creare
 doppioni. Le altre tab del foglio non vengono toccate.
 
+## Bot Telegram
+
+Il bot fa le stesse cose da telefono:
+
+- **Caricare il CSV**: invia al bot il file `.csv` esportato dalla banca. Lo
+  carica sul foglio e risponde con il resoconto.
+- **Aggiungere una spesa a mano** (es. in contanti): `/spesa` e rispondi alle
+  domande (importo, nome, categoria, conto, data). Più veloce: scrivi importo
+  e nome in un messaggio, ad esempio `12,50 kebab`, e scegli il resto dai
+  bottoni. `/annulla` interrompe.
+
+Configurazione (una volta sola):
+
+1. Su Telegram scrivi a **@BotFather**, comando `/newbot`, e copia il token in
+   `telegram_token` dentro `config.toml`.
+2. Avvia il bot e scrivigli un messaggio qualsiasi: ti risponde con il tuo ID
+   Telegram. Mettilo in `telegram_utenti` e riavvia il bot. Chi non è in
+   quell'elenco non può fare nulla.
+
+```sh
+.venv/bin/python bot.py
+```
+
+Il bot funziona finché il comando resta in esecuzione; si ferma con Ctrl+C.
+Non serve un indirizzo pubblico: è il bot a interrogare Telegram, quindi gira
+allo stesso modo sul PC o su un server. I messaggi inviati mentre è spento
+vengono elaborati al riavvio, se non sono passate più di 24 ore.
+
 ## Struttura del foglio
 
 - **`Spese <anno>`** (una tab per anno): una riga per spesa, ordinate per data.

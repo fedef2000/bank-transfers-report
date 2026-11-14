@@ -80,6 +80,10 @@ INCOME_BY_TYPE = {
 }
 
 
+class ReportError(Exception):
+    """Errore da mostrare all'utente così com'è (configurazione o foglio da sistemare)."""
+
+
 @dataclass
 class Record:
     tab: str  # titolo della tab di destinazione
@@ -276,7 +280,7 @@ def find_tab(spreadsheet, title: str, first_header: list[str]):
         return None
     header = ws.row_values(1)
     if header[: len(first_header)] != first_header:
-        sys.exit(
+        raise ReportError(
             f'La tab "{title}" esiste già ma la prima riga non è quella attesa:\n'
             f"  attesa:  {first_header}\n  trovata: {header}\n"
             "Rinominala, oppure cambia i nomi delle tab in config.toml."
@@ -312,7 +316,7 @@ def read_rows(ws) -> list[list]:
         elif isinstance(date, str) and MONTH_TITLE_RE.match(date.strip()):
             continue
         else:
-            sys.exit(
+            raise ReportError(
                 f'Tab "{ws.title}", riga {number}: la data "{date}" non è una data valida. '
                 "Correggila sul foglio e rilancia: non è stato scritto nulla su questa tab."
             )
@@ -884,7 +888,7 @@ def format_summary(spreadsheet, ws, n_cols: int, n_accounts: int, blocks: list[d
     spreadsheet.batch_update({"requests": requests})
 
 
-def update_summary(spreadsheet, cfg: dict, categories: list[str]) -> None:
+def update_summary(spreadsheet, cfg: dict, categories: list[str], out=print) -> None:
     title = cfg.get("foglio_riepilogo", "Riepilogo")
     accounts = cfg.get("patrimonio", DEFAULT_ACCOUNTS)
     header = SUMMARY_FIXED + accounts + [NOTES, "Da categorizzare"] + categories
@@ -909,38 +913,37 @@ def update_summary(spreadsheet, cfg: dict, categories: list[str]) -> None:
     grid, blocks = build_summary(sorted(years), cfg, categories, accounts, has_income, manual)
     write_grid(ws, [header] + grid, first_row=1)
     format_summary(spreadsheet, ws, len(header), len(accounts), blocks)
-    print(f"{title}: aggiornato ({', '.join(map(str, sorted(years)))})")
+    out(f"{title}: aggiornato ({', '.join(map(str, sorted(years)))})")
 
 
-# --- CLI ---------------------------------------------------------------------
+# --- Operazioni --------------------------------------------------------------
 
 
-def print_preview(title: str, records: list[Record]) -> None:
-    print(f"\n{title} ({len(records)})")
-    for r in records:
-        _data, importo, nome, categoria, _conto, descrizione, _id = r.row
-        print(f"  {r.when:%d/%m %H:%M}  {importo:>9.2f}  {nome[:18]:<18}  {categoria[:18]:<18}  {descrizione[:50]}")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("csv", type=Path, help="export CSV della banca")
-    parser.add_argument("--dry-run", action="store_true", help="mostra cosa verrebbe caricato senza scrivere")
-    args = parser.parse_args()
-
+def load_settings() -> tuple[dict, dict]:
+    """Configurazione e regole, rilette a ogni operazione così le modifiche valgono subito."""
     config_path = ROOT / "config.toml"
     if not config_path.exists():
-        sys.exit("Manca config.toml: copia config.example.toml in config.toml e compilalo.")
-    cfg = load_toml(config_path)
-    rules = load_toml(ROOT / "regole.toml")
+        raise ReportError("Manca config.toml: copia config.example.toml in config.toml e compilalo.")
+    return load_toml(config_path), load_toml(ROOT / "regole.toml")
+
+
+def print_preview(title: str, records: list[Record], out=print) -> None:
+    out(f"\n{title} ({len(records)})")
+    for r in records:
+        _data, importo, nome, categoria, _conto, descrizione, _id = r.row
+        out(f"  {r.when:%d/%m %H:%M}  {importo:>9.2f}  {nome[:18]:<18}  {categoria[:18]:<18}  {descrizione[:50]}")
+
+
+def sync_csv(csv_path: Path, cfg: dict, rules: dict, dry_run: bool = False, out=print) -> None:
+    """Carica sul foglio le transazioni del CSV. `out` riceve le righe del resoconto."""
     spese_categories = rules.get("categorie_spese", [])
     highlight_above = int(cfg.get("soglia_evidenza", 30))
 
-    parsed = parse_csv(args.csv, cfg, rules)
+    parsed = parse_csv(csv_path, cfg, rules)
 
     online = bool(cfg.get("spreadsheet_id")) and (ROOT / cfg["credenziali"]).exists()
-    if not online and not args.dry_run:
-        sys.exit("Imposta spreadsheet_id e il file delle credenziali in config.toml (vedi README).")
+    if not online and not dry_run:
+        raise ReportError("Imposta spreadsheet_id e il file delle credenziali in config.toml (vedi README).")
 
     spreadsheet = open_spreadsheet(cfg) if online else None
     duplicates = 0
@@ -961,7 +964,7 @@ def main() -> None:
         is_income = title == cfg["foglio_entrate"]
         records = [r for r in parsed.records if r.tab == title]
         ws = find_tab(spreadsheet, title, HEADER) if online else None
-        if ws is not None and not args.dry_run:
+        if ws is not None and not dry_run:
             ensure_adjust_columns(spreadsheet, ws)
         existing = read_rows(ws) if ws is not None else []
         known_ids = {row[ID_COL] for row in existing}
@@ -970,12 +973,12 @@ def main() -> None:
         refilled = fill_from_rules(existing, by_id, rules)
         completed += len(refilled)
 
-        if args.dry_run:
-            print_preview(title, new)
+        if dry_run:
+            print_preview(title, new, out)
             if refilled:
-                print(f"  Già sul foglio, verrebbero completate ({len(refilled)}):")
+                out(f"  Già sul foglio, verrebbero completate ({len(refilled)}):")
                 for row in refilled:
-                    print(f"    {row[NAME_COL][:18]:<18}  {row[CATEGORY_COL][:18]:<18}  {str(row[DESCRIPTION_COL])[:50]}")
+                    out(f"    {row[NAME_COL][:18]:<18}  {row[CATEGORY_COL][:18]:<18}  {str(row[DESCRIPTION_COL])[:50]}")
         elif new or existing:
             if ws is None:
                 ws = create_data_tab(
@@ -985,27 +988,65 @@ def main() -> None:
                     None if is_income else highlight_above,
                 )
             write_data_tab(ws, build_layout(existing + [r.row for r in new]))
-            print(f"{title}: {len(new)} righe aggiunte, {len(refilled)} già presenti completate con le regole")
+            out(f"{title}: {len(new)} righe aggiunte, {len(refilled)} già presenti completate con le regole")
 
         if new:
             missing = sum(1 for r in new if not r.row[CATEGORY_COL])
-            print(f"  {missing} su {len(new)} senza categoria, da compilare a mano")
+            out(f"  {missing} su {len(new)} senza categoria, da compilare a mano")
 
-    if online and not args.dry_run:
-        update_summary(spreadsheet, cfg, spese_categories)
+    if online and not dry_run:
+        update_summary(spreadsheet, cfg, spese_categories, out)
 
-    print()
+    out("")
     if online:
-        print(f"Già presenti sul foglio, saltate: {duplicates}")
+        out(f"Già presenti sul foglio, saltate: {duplicates}")
     else:
-        print("Foglio Google non configurato: anteprima senza controllo dei duplicati.")
-    print(f"Giroconti tra i tuoi conti, saltati: {parsed.transfers_skipped}")
+        out("Foglio Google non configurato: anteprima senza controllo dei duplicati.")
+    out(f"Giroconti tra i tuoi conti, saltati: {parsed.transfers_skipped}")
     if parsed.rules_skipped:
-        print(f"Ignorate da una regola: {parsed.rules_skipped}")
+        out(f"Ignorate da una regola: {parsed.rules_skipped}")
     if parsed.investments_skipped:
-        print(f"Compravendite di titoli, saltate: {parsed.investments_skipped}")
-    if args.dry_run:
-        print("Dry-run: non è stato scritto nulla.")
+        out(f"Compravendite di titoli, saltate: {parsed.investments_skipped}")
+    if dry_run:
+        out("Dry-run: non è stato scritto nulla.")
+
+
+
+def add_manual_expense(
+    cfg: dict, rules: dict, when: datetime, amount: float, nome: str, categoria: str, conto: str, tx_id: str = ""
+) -> str:
+    """Aggiunge una spesa inserita a mano (es. in contanti). Restituisce il titolo della tab."""
+    if not (cfg.get("spreadsheet_id") and (ROOT / cfg["credenziali"]).exists()):
+        raise ReportError("Imposta spreadsheet_id e il file delle credenziali in config.toml (vedi README).")
+    spreadsheet = open_spreadsheet(cfg)
+    categories = rules.get("categorie_spese", [])
+    title = year_tab(cfg, when.year)
+    ws = find_tab(spreadsheet, title, HEADER)
+    created = ws is None
+    if created:
+        ws = create_data_tab(spreadsheet, title, categories, int(cfg.get("soglia_evidenza", 30)))
+    else:
+        ensure_adjust_columns(spreadsheet, ws)
+    row = [to_serial(when.replace(tzinfo=None, microsecond=0)), round(amount, 2), safe_text(nome), categoria, conto, "", tx_id]
+    write_data_tab(ws, build_layout(read_rows(ws) + [row]))
+    if created:  # un anno nuovo: il riepilogo deve guadagnare il suo blocco
+        update_summary(spreadsheet, cfg, categories, out=lambda _line: None)
+    return title
+
+
+# --- CLI ---------------------------------------------------------------------
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("csv", type=Path, help="export CSV della banca")
+    parser.add_argument("--dry-run", action="store_true", help="mostra cosa verrebbe caricato senza scrivere")
+    args = parser.parse_args()
+    try:
+        cfg, rules = load_settings()
+        sync_csv(args.csv, cfg, rules, dry_run=args.dry_run)
+    except ReportError as error:
+        sys.exit(str(error))
 
 
 if __name__ == "__main__":

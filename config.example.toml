@@ -28,3 +28,12 @@ fuso_orario = "Europe/Rome"
 # IBAN degli altri tuoi conti: i bonifici da/verso questi IBAN sono giroconti
 # e non vengono caricati né come spesa né come entrata.
 miei_iban = []
+
+# --- Bot Telegram (facoltativo, vedi README) ---
+# Token ricevuto da @BotFather. È una password: non condividerlo.
+telegram_token = ""
+# ID Telegram di chi può usare il bot. Lascia vuoto, avvia il bot e scrivigli:
+# ti risponde con il tuo ID da mettere qui.
+telegram_utenti = []
+# Conti tra cui scegliere quando aggiungi una spesa a mano dal bot.
+conti_manuali = ["Contanti", "N26"]
