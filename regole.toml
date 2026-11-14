@@ -12,7 +12,6 @@ categorie_spese = [
     "Casa",
     "Spesa",
     "Pranzo in ufficio",
-    "Cene con amici",
     "Uscite con amici",
     "Cibo fuori casa",
     "Trasporti",
@@ -105,6 +104,11 @@ nome = "Iliad"
 categoria = "Abbonamenti"
 
 [[regola]]
+contiene = "HO-MOBILE"
+nome = "HO MOBILE"
+categoria = "Abbonamenti"
+
+[[regola]]
 contiene = "ANTHROPIC* CLAUDE SUB"
 nome = "Anthropic"
 categoria = "Abbonamenti"
@@ -125,12 +129,28 @@ contiene = "RSG Group Österreich"
 nome = "Abbonamento Palestra"
 categoria = "Sport"
 
-# --- Sport ---
+# --- Cibo Fuori casa ---
 [[regola]]
 contiene = "GELATERIA"
 nome = "Gelato"
 categoria = "Cibo Fuori Casa"
 
+# --- Salute ---
+[[regola]]
+contiene = "Sebastiano Ruozi"
+nome = "psicologo"
+categoria = "Salute"
+
+# --- Casa ---
+[[regola]]
+contiene = "TripleCleanGmbH"
+nome = "Lavanderia"
+categoria = "Cura personale"
+
+[[regola]]
+contiene = "Tedi"
+nome = "Tedi"
+categoria = "Casa"
 
 # --- Categoria dal codice MCC (solo se nessuna regola l'ha assegnata) ---
 # Ristoranti e bar (5812, 5814) restano volutamente fuori: dal codice non si
