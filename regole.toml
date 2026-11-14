@@ -82,16 +82,31 @@ contiene = "buoni mensa"
 nome = "Buoni mensa"
 categoria = "Pranzo in ufficio"
 
+[[regola]]
+contiene = "HITOMI W21 GASTRO KG"
+nome = "Pranzo Hitomi"
+categoria = "Pranzo in ufficio"
+
 # --- Trasporti ---
 [[regola]]
 contiene = "easypark"
 nome = "Parcheggio"
 categoria = "Trasporti"
 
+[[regola]]
+contiene = "WIENER LINIEN"
+nome = "Abbonamento mezzi Vienna"
+categoria = "Trasporti"
+
 # --- Abbonamenti ---
 [[regola]]
 contiene = "iliad"
 nome = "Iliad"
+categoria = "Abbonamenti"
+
+[[regola]]
+contiene = "ANTHROPIC* CLAUDE SUB"
+nome = "Anthropic"
 categoria = "Abbonamenti"
 
 [[regola]]
@@ -103,6 +118,19 @@ categoria = "Abbonamenti"
 contiene = "telecom italia"
 nome = "TIM"
 categoria = "Abbonamenti"
+
+# --- Sport ---
+[[regola]]
+contiene = "RSG Group Österreich"
+nome = "Abbonamento Palestra"
+categoria = "Sport"
+
+# --- Sport ---
+[[regola]]
+contiene = "GELATERIA"
+nome = "Gelato"
+categoria = "Cibo Fuori Casa"
+
 
 # --- Categoria dal codice MCC (solo se nessuna regola l'ha assegnata) ---
 # Ristoranti e bar (5812, 5814) restano volutamente fuori: dal codice non si
