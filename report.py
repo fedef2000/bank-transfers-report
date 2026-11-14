@@ -46,6 +46,10 @@ NOTES = "Note"
 # Righe lasciate vuote sotto ogni anno del riepilogo, dove stanno i grafici.
 CHART_ROWS = 20
 CHART_HEIGHT = 380
+# Riga del riepilogo con il menu a tendina del mese, una per anno.
+PICKER_LABEL = "Mese selezionato"
+# Righe occupate dalla tabella del mese con la sua torta (alta CHART_HEIGHT).
+PIE_ROWS = 19
 
 MONTHS = [
     "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
@@ -63,6 +67,7 @@ SEP = ";"
 HEADER_BG = {"red": 0.16, "green": 0.22, "blue": 0.33}
 WHITE = {"red": 1, "green": 1, "blue": 1}
 MONTH_BG = {"red": 0.82, "green": 0.87, "blue": 0.95}
+MONTH_FONT_SIZE = 12
 HIGHLIGHT_BG = {"red": 0.99, "green": 0.88, "blue": 0.88}
 INPUT_BG = {"red": 1, "green": 0.97, "blue": 0.84}
 ERROR_BG = {"red": 0.92, "green": 0.3, "blue": 0.3}
@@ -365,6 +370,45 @@ def write_data_tab(ws, layout: list[list]) -> None:
     ws.batch_update(data, value_input_option="USER_ENTERED")
     if end_row < ws.row_count:
         ws.batch_clear(tails)
+    ws.spreadsheet.batch_update({"requests": month_title_requests(ws, layout)})
+
+
+def month_title_requests(ws, layout: list[list]) -> list[dict]:
+    """Font più grande e bordi sulle righe-titolo dei mesi.
+
+    La formattazione condizionale non sa cambiare font o bordi, e le righe-titolo
+    si spostano a ogni import: si azzera tutto e si riapplica alle righe di ora.
+    """
+    fields = "userEnteredFormat.textFormat.fontSize,userEnteredFormat.borders"
+    whole_width = {"startColumnIndex": 0, "endColumnIndex": ws.col_count}
+    requests = [
+        {
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": ws.row_count, **whole_width},
+                "cell": {"userEnteredFormat": {"textFormat": {"fontSize": 10}, "borders": {}}},
+                "fields": fields,
+            }
+        }
+    ]
+    title_format = {
+        "textFormat": {"fontSize": MONTH_FONT_SIZE},
+        "borders": {
+            "top": {"style": "SOLID_THICK", "colorStyle": {"rgbColor": HEADER_BG}},
+            "bottom": {"style": "SOLID", "colorStyle": {"rgbColor": HEADER_BG}},
+        },
+    }
+    for index, row in enumerate(layout, start=1):  # riga 2 del foglio = indice 1
+        if isinstance(row[DATE_COL], str) and MONTH_TITLE_RE.match(row[DATE_COL].lstrip("'")):
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": ws.id, "startRowIndex": index, "endRowIndex": index + 1, **whole_width},
+                        "cell": {"userEnteredFormat": title_format},
+                        "fields": fields,
+                    }
+                }
+            )
+    return requests
 
 
 def repeat_cell(sheet_id: int, cell_format: dict, **grid_range) -> dict:
@@ -637,6 +681,7 @@ def build_summary(
     accounts: list[str],
     has_income: bool,
     manual: dict[int, dict[str, object]],
+    selected: dict[int, int | str],
 ) -> tuple[list[list], list[dict]]:
     """Una riga per mese. Tutto formule, tranne i saldi dei conti e le note che si scrivono a mano.
 
@@ -669,6 +714,10 @@ def build_summary(
     income_tabs = [quoted(cfg["foglio_entrate"])] if has_income else []
     money_cols = [1, 2, 3, uncategorized] + list(range(first_category, n_cols))
     grid, blocks = [], []
+
+    def blank() -> list:
+        return [""] * n_cols
+
     for year in years:
         # Una spesa può essere spostata su mesi di un altro anno.
         spese_tabs = [quoted(year_tab(cfg, y)) for y in years]
@@ -712,18 +761,87 @@ def build_summary(
             span = f"{col_letter(c)}{start}:{col_letter(c)}{end}"
             average[c] = f'=IFERROR(AVERAGEIF($C{start}:$C{end}{SEP}">0"{SEP}{span}){SEP}"")'
         grid.append(average)
-        block |= {"first": start, "last": end, "total": end + 1, "average": end + 2, "charts": end + 4}
+        grid.append(blank())
+
+        # Un mese del blocco qui sopra, o l'anno intero (la riga "Totale", subito
+        # dopo i mesi), scelto dal menu: le sue spese per categoria in una tabella,
+        # dalla più alta, con accanto la torta.
+        picker_row = len(grid) + 2
+        total_row = end + 1
+        picker = blank()
+        picker[0], picker[1] = PICKER_LABEL, selected.get(year) or default_month(year)
+        picker[2] = f"=SUMIF($A${start}:$A${total_row}{SEP}$B${picker_row}{SEP}$C${start}:$C${total_row})"
+        grid.append(picker)
+        table_header = blank()
+        table_header[:3] = ["Categoria", "Spesa", "%"]
+        grid.append(table_header)
+        slices = [uncategorized] + list(range(first_category, n_cols))
+        first_col, last_col = col_letter(slices[0]), col_letter(slices[-1])
+        chosen = (
+            f"INDEX(${first_col}${start}:${last_col}${total_row}{SEP}"
+            f"MATCH($B${picker_row}{SEP}$A${start}:$A${total_row}{SEP}0){SEP}0)"
+        )
+        # Nomi e importi si allargano da soli nelle colonne A e B (le altre celle
+        # restano vuote); le categorie senza spese non compaiono.
+        sorted_table = (
+            f"=IFERROR(LET(nomi{SEP}TRANSPOSE(${first_col}$1:${last_col}$1){SEP}"
+            f"importi{SEP}TRANSPOSE({chosen}){SEP}"
+            f'SORT(FILTER(HSTACK(nomi{SEP}importi){SEP}importi<>0){SEP}2{SEP}FALSE)){SEP}"")'
+        )
+        for i in range(len(slices)):
+            r = len(grid) + 2
+            line = blank()
+            if i == 0:
+                line[0] = sorted_table
+            line[2] = f'=IF(OR($C${picker_row}<=0{SEP}N(B{r})=0){SEP}""{SEP}B{r}/$C${picker_row})'
+            grid.append(line)
+        month_rows = max(2 + len(slices), PIE_ROWS)
+        grid.extend(blank() for _ in range(month_rows - 2 - len(slices)))
+        grid.append(blank())
+
+        block |= {
+            "first": start,
+            "last": end,
+            "total": end + 1,
+            "average": end + 2,
+            "picker": picker_row,
+            "slices": (picker_row + 2, picker_row + 1 + len(slices)),
+            "charts": picker_row + month_rows + 1,
+        }
         blocks.append(block)
-        grid.extend([""] * n_cols for _ in range(CHART_ROWS))
+        grid.extend(blank() for _ in range(CHART_ROWS))
     return grid, blocks
+
+
+def default_month(year: int) -> int:
+    """Il mese corrente per l'anno in corso; dicembre per gli anni passati, gennaio per quelli futuri."""
+    today = datetime.now()
+    month = today.month if year == today.year else (12 if year < today.year else 1)
+    return round(to_serial(datetime(year, month, 1)))
+
+
+def read_selected_months(ws) -> dict[int, int]:
+    """Per ogni anno, il mese scelto l'ultima volta nel menu."""
+    from gspread.utils import ValueRenderOption
+
+    saved = {}
+    for row in ws.get_values("A:B", value_render_option=ValueRenderOption.unformatted):
+        if len(row) < 2 or row[0] != PICKER_LABEL:
+            continue
+        if is_number(row[1]):
+            serial = round(row[1])
+            saved[from_serial(serial).year] = serial
+        elif match := re.fullmatch(r"Totale (\d{4})", str(row[1]).strip()):
+            saved[int(match.group(1))] = row[1]
+    return saved
 
 
 def create_summary_tab(spreadsheet, title: str, n_cols: int):
     return spreadsheet.add_worksheet(title=title, rows=200, cols=n_cols, index=0)
 
 
-def summary_charts(sid: int, block: dict, first_slice: int, n_cols: int) -> list[dict]:
-    """I due grafici di un anno: torta delle spese per categoria e andamento mensile."""
+def summary_charts(sid: int, block: dict) -> list[dict]:
+    """Il grafico dell'andamento mensile delle spese di un anno."""
 
     def cells(first_row: int, last_row: int, first_col: int, last_col: int) -> dict:
         """Intervallo con righe numerate come sul foglio e colonne da zero, estremi inclusi."""
@@ -754,14 +872,6 @@ def summary_charts(sid: int, block: dict, first_slice: int, n_cols: int) -> list
         return {"addChart": {"chart": {"spec": spec, "position": position}}}
 
     year = block["year"]
-    pie = {
-        "title": f"Spese {year} per categoria",
-        "pieChart": {
-            "legendPosition": "RIGHT_LEGEND",
-            "domain": cells(1, 1, first_slice, n_cols - 1),
-            "series": cells(block["total"], block["total"], first_slice, n_cols - 1),
-        },
-    }
     line = {
         "title": f"Spese {year} mese per mese",
         "basicChart": {
@@ -775,9 +885,8 @@ def summary_charts(sid: int, block: dict, first_slice: int, n_cols: int) -> list
             ],
         },
     }
-    # La torta parte dal bordo sinistro e la linea inizia esattamente dove finisce la torta.
-    pie_width = 560
-    return [chart(pie, 0, pie_width), chart(line, pie_width, 760)]
+    # La torta delle categorie è sopra, con il periodo scelto dal menu (anche l'anno intero).
+    return [chart(line, 0, 760)]
 
 
 def format_summary(spreadsheet, ws, n_cols: int, n_accounts: int, blocks: list[dict]) -> None:
@@ -793,6 +902,12 @@ def format_summary(spreadsheet, ws, n_cols: int, n_accounts: int, blocks: list[d
     old_rules = current.get("conditionalFormats", [])
     requests = [{"deleteConditionalFormatRule": {"sheetId": sid, "index": i}} for i in reversed(range(len(old_rules)))]
     requests += [{"deleteEmbeddedObject": {"objectId": c["chartId"]}} for c in current.get("charts", [])]
+    # Le righe si spostano quando cambiano gli anni: via formati e menu delle
+    # posizioni vecchie, poi si riapplica tutto qui sotto.
+    requests += [
+        {"repeatCell": {"range": {"sheetId": sid, **body_rows}, "cell": {}, "fields": "userEnteredFormat"}},
+        {"setDataValidation": {"range": {"sheetId": sid, **body_rows}}},
+    ]
 
     def balance_rule(condition: str, color: dict, index: int) -> dict:
         return {
@@ -845,6 +960,8 @@ def format_summary(spreadsheet, ws, n_cols: int, n_accounts: int, blocks: list[d
         ),
         column_width(sid, 0, 1, 190),
         column_width(sid, 1, n_cols, 115),
+        # Più larga: ospita anche il menu del mese ("settembre 2026" con la freccia).
+        column_width(sid, 1, 2, 165),
         # Le colonne da compilare a mano (saldi dei conti) hanno uno sfondo diverso.
         repeat_cell(sid, {"backgroundColor": WHITE}, **body_rows),
     ]
@@ -864,7 +981,6 @@ def format_summary(spreadsheet, ws, n_cols: int, n_accounts: int, blocks: list[d
 
     # Per ultimi, perché vincano sui formati di colonna: la fascia con l'anno
     # e le righe "Totale" e "Media" di ogni blocco.
-    first_slice = notes + 1  # "Da categorizzare", seguita dalle categorie
     for block in blocks:
         title = {"startRowIndex": block["title"] - 1, "endRowIndex": block["title"]}
         requests += [
@@ -888,8 +1004,92 @@ def format_summary(spreadsheet, ws, n_cols: int, n_accounts: int, blocks: list[d
                 }
             },
         ]
-        requests += summary_charts(sid, block, first_slice, n_cols)
+        requests += picker_requests(ws, block)
+        requests += summary_charts(sid, block)
     spreadsheet.batch_update({"requests": requests})
+
+
+def picker_requests(ws, block: dict) -> list[dict]:
+    """Menu a tendina del mese, la tabella delle sue categorie e la torta accanto."""
+    sid = ws.id
+    picker = block["picker"]
+    first_slice, last_slice = block["slices"]
+
+    def area(first_row: int, last_row: int, first_col: int, last_col: int) -> dict:
+        """Righe numerate come sul foglio e colonne da zero, estremi inclusi."""
+        return {
+            "startRowIndex": first_row - 1,
+            "endRowIndex": last_row,
+            "startColumnIndex": first_col,
+            "endColumnIndex": last_col + 1,
+        }
+
+    def source(first_row: int, last_row: int, col: int) -> dict:
+        return {"sourceRange": {"sources": [{"sheetId": sid, **area(first_row, last_row, col, col)}]}}
+
+    pie = {
+        "title": "Spese per categoria nel periodo selezionato",
+        "pieChart": {
+            "legendPosition": "RIGHT_LEGEND",
+            "domain": source(first_slice, last_slice, 0),
+            "series": source(first_slice, last_slice, 1),
+        },
+    }
+    bold = {"textFormat": {"bold": True, "fontSize": 11}}
+    return [
+        # Riga del menu: mese e totale delle spese, con lo sfondo delle celle da compilare.
+        repeat_cell(sid, {"backgroundColor": MONTH_BG, **bold, "verticalAlignment": "MIDDLE"}, **area(picker, picker, 0, 2)),
+        repeat_cell(sid, {"backgroundColor": INPUT_BG}, **area(picker, picker, 1, 2)),
+        repeat_cell(
+            sid,
+            {"numberFormat": {"type": "DATE", "pattern": "mmmm yyyy"}, "horizontalAlignment": "LEFT"},
+            **area(picker, picker, 1, 1),
+        ),
+        {
+            "updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": picker - 1, "endIndex": picker},
+                "properties": {"pixelSize": 34},
+                "fields": "pixelSize",
+            }
+        },
+        # Il menu propone i mesi del blocco qui sopra e la sua riga "Totale".
+        {
+            "setDataValidation": {
+                "range": {"sheetId": sid, **area(picker, picker, 1, 1)},
+                "rule": {
+                    "condition": {
+                        "type": "ONE_OF_RANGE",
+                        "values": [{"userEnteredValue": f"={quoted(ws.title)}!$A${block['first']}:$A${block['total']}"}],
+                    },
+                    "strict": True,
+                    "showCustomUi": True,
+                },
+            }
+        },
+        # Tabella delle categorie: intestazione, importi in nero e percentuali.
+        repeat_cell(sid, {"backgroundColor": MONTH_BG, "textFormat": {"bold": True}}, **area(picker + 1, picker + 1, 0, 2)),
+        repeat_cell(sid, {"textFormat": {"foregroundColor": BLACK}}, **area(first_slice, last_slice, 0, 2)),
+        repeat_cell(
+            sid,
+            {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}, "horizontalAlignment": "RIGHT"},
+            **area(picker + 1, last_slice, 2, 2),
+        ),
+        {
+            "addChart": {
+                "chart": {
+                    "spec": pie,
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {"sheetId": sid, "rowIndex": picker, "columnIndex": 3},
+                            "offsetXPixels": 15,
+                            "widthPixels": 560,
+                            "heightPixels": CHART_HEIGHT,
+                        }
+                    },
+                }
+            }
+        },
+    ]
 
 
 def update_summary(spreadsheet, cfg: dict, categories: list[str], out=print) -> None:
@@ -912,9 +1112,10 @@ def update_summary(spreadsheet, cfg: dict, categories: list[str], out=print) -> 
 
     ws = find_tab(spreadsheet, title, SUMMARY_FIXED[:1])
     manual = read_manual_cells(ws, accounts + [NOTES]) if ws is not None else {}
+    selected = read_selected_months(ws) if ws is not None else {}
     if ws is None:
         ws = create_summary_tab(spreadsheet, title, len(header))
-    grid, blocks = build_summary(sorted(years), cfg, categories, accounts, has_income, manual)
+    grid, blocks = build_summary(sorted(years), cfg, categories, accounts, has_income, manual, selected)
     write_grid(ws, [header] + grid, first_row=1)
     format_summary(spreadsheet, ws, len(header), len(accounts), blocks)
     out(f"{title}: aggiornato ({', '.join(map(str, sorted(years)))})")
