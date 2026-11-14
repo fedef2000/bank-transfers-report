@@ -305,6 +305,10 @@ def read_rows(ws) -> list[list]:
         row = raw[:DATA_WIDTH] + raw[EXTRA_START:]
         if not any(str(cell).strip() for cell in row):
             continue
+        if not any(str(cell).strip() for i, cell in enumerate(row[: len(HEADER)]) if i != ID_COL):
+            # Resti di una transazione cancellata a metà (es. solo l'ID, o
+            # "Importo contato" / "Mesi"): senza data né importo non c'è nulla da tenere.
+            continue
         date = row[DATE_COL]
         if is_number(date):
             # Il testo riletto ha perso l'eventuale apostrofo iniziale.
